@@ -1,0 +1,19 @@
+
+Name                                                            Length LastWriteTime
+----                                                            ------ -------------
+10.1clients.xlsx                                                 14941 10/9/2017 3:24:36 PM
+8.1clients.xlsx                                                  16935 10/9/2017 3:22:10 PM
+9.1clients.xlsx                                                  17156 10/9/2017 3:23:28 PM
+apache_access.log                                              2779843 9/22/2017 10:47:02 AM
+Basic Vanilla Milkshake Recipe _ Bobby Flay _ Food Network.pdf   61804 9/22/2017 10:54:02 AM
+C916contents.txt                                                     0 5/28/2025 11:29:02 AM
+DailyLog.txt                                                       363 5/28/2025 11:29:01 AM
+eventA.log                                                       16189 10/9/2017 2:53:26 PM
+eventB.log                                                       15667 10/9/2017 2:54:00 PM
+eventC.log                                                       15766 10/9/2017 2:54:34 PM
+eventD.log                                                       16693 10/9/2017 2:55:18 PM
+eventE.log                                                       16671 10/9/2017 2:55:50 PM
+JanuaryEventPic1.jpeg                                          4150250 9/22/2017 10:57:42 AM
+prompts.ps1                                                       6460 5/28/2025 11:28:58 AM
+swedenCarnivalEvent.jpg                                          95010 9/22/2017 10:58:14 AM
+
