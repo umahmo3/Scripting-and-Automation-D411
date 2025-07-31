@@ -1,19 +1,10 @@
 <#
     Restore-AD.ps1
-    Student: Umer Mahmood
-    Student ID: 001224010          # ← Replace with your actual WGU ID if different
-    Task 2 – Restore Active Directory
-
-    This script rebuilds the Finance OU and bulk-creates users from financePersonnel.csv.
-    Requirements met:
-      1) Remove existing Finance OU (if present) with confirmation messages.
-      2) Create new Finance OU.
-      3) Import users with GivenName, Surname, DisplayName, PostalCode,
-         OfficePhone, MobilePhone (samAccountName is taken from CSV).
-      4) Output AdResults.txt exactly as specified by the rubric.
+    Umer Mahmood
+    Student ID: 001224010 
 #>
 
-# --- PREPARATION --------------------------------------------------------------
+# ---prep---------------------------------------------------------------
 Import-Module ActiveDirectory
 
 $domainDN        = 'dc=consultingfirm,dc=com'   # Fixed DN per rubric wording
@@ -23,7 +14,7 @@ $scriptDir       = Split-Path -Parent $PSCommandPath
 $csvPath         = Join-Path $scriptDir 'financePersonnel.csv'
 
 try {
-    # --- 1. Remove existing Finance OU if it exists --------------------------
+    # ---remove existing OU if exists--------------------------
     $existingOU = Get-ADOrganizationalUnit -LDAPFilter "(ou=$financeOUName)" `
                                            -SearchBase $domainDN `
                                            -ErrorAction SilentlyContinue
@@ -38,11 +29,11 @@ try {
         Write-Host "No existing '$financeOUName' OU was detected." -ForegroundColor Cyan
     }
 
-    # --- 2. Create new Finance OU -------------------------------------------
+    # --- reate new OU-------------------------------------------
     New-ADOrganizationalUnit -Name $financeOUName -Path $domainDN -ProtectedFromAccidentalDeletion $true
     Write-Host "New '$financeOUName' OU created successfully." -ForegroundColor Green
 
-    # --- 3. Import users from CSV -------------------------------------------
+    # ---Import users from CSV-------------------------------------------
     if (-not (Test-Path $csvPath)) { throw "CSV file not found: $csvPath" }
 
     Import-Csv -Path $csvPath | ForEach-Object {
@@ -73,6 +64,5 @@ catch {
     break
 }
 
-# --- 4. REQUIRED OUTPUT LINE --------------------------------------------------
-# (Must be the exact text shown in the rubric)
+# --- REQUIRED OUTPUT LINE --------------------------------------------------
 Get-ADUser -Filter * -SearchBase "ou=Finance,dc=consultingfirm,dc=com" -Properties DisplayName,PostalCode,OfficePhone,MobilePhone > .\AdResults.txt
