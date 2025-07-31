@@ -1,9 +1,10 @@
 <##
     Umer Mahmood
     Student ID: 001224010
-    AUN1 Task 2: Restored AD and SQL Automation Scripts
-    NOTE: Run each section in an elevated session under a Domain Admin or SQL sysadmin account.
-         Use `Unblock-File -Path Restore-AD.ps1` if you see execution warnings.
+    Task 2: Restore Active Directory
+
+    NOTE: Run in an elevated session under a Domain Admin account.
+    Use `Unblock-File -Path Restore-AD.ps1` if execution policy blocks the script.
 ##>
 
 # ==================================================
@@ -29,6 +30,7 @@ try {
     $existingOu = Get-ADOrganizationalUnit -Filter 'Name -eq "Finance"' -ErrorAction SilentlyContinue
     if ($existingOu) {
         Write-Host "Finance OU exists. Deleting..." -ForegroundColor Yellow
+        Set-ADOrganizationalUnit -Identity $existingOu -ProtectedFromAccidentalDeletion:$false -ErrorAction SilentlyContinue
         Remove-ADOrganizationalUnit -Identity $existingOu -Recursive -Confirm:$false -ErrorAction Stop
         Write-Host "Finance OU deleted." -ForegroundColor Green
     } else {
@@ -45,33 +47,49 @@ try {
     Write-Host "-- Importing users from: $csvFile"
     $users = Import-Csv -Path $csvFile -ErrorAction Stop
 
-    # Loop through each entry and create a user
+    $created = 0
     foreach ($u in $users) {
-        $fullName = "$($u.'First Name') $($u.'Last Name')"
-        $userParams = @{ 
-            GivenName       = $u.'First Name'
-            Surname         = $u.'Last Name'
+        # Support multiple header styles in the CSV
+        $first  = $u.'First Name'  ?? $u.FirstName  ?? $u.First_Name
+        $last   = $u.'Last Name'   ?? $u.LastName   ?? $u.Last_Name
+        $postal = $u.'Postal Code' ?? $u.PostalCode ?? $u.Postal_Code
+        $office = $u.'Office Phone' ?? $u.OfficePhone ?? $u.Office_Phone
+        $mobile = $u.'Mobile Phone' ?? $u.MobilePhone ?? $u.Mobile_Phone
+        $sam    = $u.samAccount
+
+        # Build a SamAccountName if one is not supplied
+        if (-not $sam) {
+            $base = ($first.Substring(0,1) + $last).ToLower()
+            if ($base.Length -gt 19) { $base = $base.Substring(0,19) }
+            $sam = $base
+            $i = 1
+            while (Get-ADUser -Filter "SamAccountName -eq '$sam'" -ErrorAction SilentlyContinue) {
+                $trim = 19 - $i.ToString().Length
+                $sam = $base.Substring(0,[Math]::Max(0,$trim)) + $i
+                $i++
+            }
+        }
+
+        $fullName = "$first $last"
+        $userParams = @{
+            SamAccountName  = $sam
+            GivenName       = $first
+            Surname         = $last
             Name            = $fullName
             DisplayName     = $fullName
-            PostalCode      = $u.'Postal Code'
-            OfficePhone     = $u.'Office Phone'
-            MobilePhone     = $u.'Mobile Phone'
+            PostalCode      = $postal
+            OfficePhone     = $office
+            MobilePhone     = $mobile
             Path            = $ouDistinguishedName
             AccountPassword = (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force)
             Enabled         = $true
         }
         New-ADUser @userParams -ErrorAction Stop
-        Write-Host "Created AD user: $fullName"
+        Write-Host "Created AD user: $fullName ($sam)"
+        $created++
     }
-    Write-Host "All finance personnel have been imported." -ForegroundColor Green
+    Write-Host "$created users imported." -ForegroundColor Green
 
-    # Export created user info to a text file
-    $outputFile = Join-Path $PSScriptRoot "AdResults.txt"
-    Write-Host "-- Exporting AD report to: $outputFile"
-    Get-ADUser -Filter * -SearchBase $ouDistinguishedName -Properties DisplayName,PostalCode,OfficePhone,MobilePhone |
-        Select DisplayName,PostalCode,OfficePhone,MobilePhone |
-        Out-File -FilePath $outputFile -Encoding UTF8
-    Write-Host "AD export complete." -ForegroundColor Green
 }
 catch {
     Write-Error "[AD Script Error] $($_.Exception.Message)"
@@ -79,3 +97,6 @@ catch {
         Write-Host "Hint: Verify Domain Admin rights and AD module availability." -ForegroundColor Red
     }
 }
+
+# Export the Finance OU users for submission
+Get-ADUser -Filter * -SearchBase $ouDistinguishedName -Properties DisplayName,PostalCode,OfficePhone,MobilePhone > (Join-Path $PSScriptRoot 'AdResults.txt')

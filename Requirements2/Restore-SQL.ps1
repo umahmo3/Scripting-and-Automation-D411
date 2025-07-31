@@ -1,7 +1,7 @@
 <##
     Umer Mahmood
     Student ID: 001224010
-    Script: Restore-SQL.ps1
+    Task 2: Restore SQL Database
 ##>
 
 # Must be run by a user with dbcreator or sysadmin rights
@@ -48,26 +48,32 @@ CREATE TABLE dbo.Client_A_Contacts (
     Write-Host "-- Importing data from: $csvPath"
     $rows = Import-Csv -Path $csvPath -ErrorAction Stop
 
+    $inserted = 0
     foreach ($r in $rows) {
+        # Handle different header variations
+        $first  = $r.FirstName  ?? $r.first_name  ?? $r.'First Name'
+        $last   = $r.LastName   ?? $r.last_name   ?? $r.'Last Name'
+        $postal = $r.PostalCode ?? $r.zip         ?? $r.'Postal Code'
+        $office = $r.OfficePhone ?? $r.officePhone ?? $r.'Office Phone'
+        $mobile = $r.MobilePhone ?? $r.mobilePhone ?? $r.'Mobile Phone'
+        $display = $r.DisplayName
+        if (-not $display) { $display = "$first $last" }
+
         $insert = @"
 USE [$dbName];
 INSERT INTO dbo.Client_A_Contacts (FirstName, LastName, DisplayName, PostalCode, OfficePhone, MobilePhone)
-VALUES (N'$($r.FirstName)', N'$($r.LastName)', N'$($r.DisplayName)', N'$($r.PostalCode)', N'$($r.OfficePhone)', N'$($r.MobilePhone)');
+VALUES (N'$first', N'$last', N'$display', N'$postal', N'$office', N'$mobile');
 "@
         Invoke-Sqlcmd -ServerInstance $instance -Query $insert -ErrorAction Stop
-        Write-Host "Inserted: $($r.DisplayName)"
+        Write-Host "Inserted: $display"
+        $inserted++
     }
 
-    Write-Host "All client records imported." -ForegroundColor Green
-
-    # Export results for submission
-    $sqlOutput = Join-Path $PSScriptRoot "SqlResults.txt"
-    Write-Host "-- Exporting SQL results to: $sqlOutput"
-    Invoke-Sqlcmd -ServerInstance $instance -Database $dbName `
-        -Query "SELECT * FROM dbo.Client_A_Contacts" -ErrorAction Stop |
-        Out-File -FilePath $sqlOutput -Encoding UTF8
-    Write-Host "SQL export complete." -ForegroundColor Green
+    Write-Host "$inserted rows inserted." -ForegroundColor Green
 }
 catch {
     Write-Error "[SQL Script Error] $($_.Exception.Message)"
 }
+
+# Export table contents for submission
+Invoke-Sqlcmd -Database $dbName -ServerInstance $instance -Query 'SELECT * FROM dbo.Client_A_Contacts' > (Join-Path $PSScriptRoot 'SqlResults.txt')
