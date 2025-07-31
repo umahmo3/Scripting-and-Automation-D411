@@ -1,9 +1,10 @@
 <##
     Umer Mahmood
     Student ID: 001224010
-    AUN1 Task 2: Restored AD and SQL Automation Scripts
-    NOTE: Run each section in an elevated session under a Domain Admin or SQL sysadmin account.
-         Use `Unblock-File -Path Restore-AD.ps1` if you see execution warnings.
+    Task 2: Restore Active Directory
+
+    NOTE: Run in an elevated session under a Domain Admin account.
+    Use `Unblock-File -Path Restore-AD.ps1` if execution policy blocks the script.
 ##>
 
 # ==================================================
@@ -47,15 +48,16 @@ try {
 
     # Loop through each entry and create a user
     foreach ($u in $users) {
-        $fullName = "$($u.'First Name') $($u.'Last Name')"
-        $userParams = @{ 
-            GivenName       = $u.'First Name'
-            Surname         = $u.'Last Name'
+        # Build the display name from first and last name columns
+        $fullName = "$($u.First_Name) $($u.Last_Name)"
+        $userParams = @{
+            GivenName       = $u.First_Name
+            Surname         = $u.Last_Name
             Name            = $fullName
             DisplayName     = $fullName
-            PostalCode      = $u.'Postal Code'
-            OfficePhone     = $u.'Office Phone'
-            MobilePhone     = $u.'Mobile Phone'
+            PostalCode      = $u.PostalCode
+            OfficePhone     = $u.OfficePhone
+            MobilePhone     = $u.MobilePhone
             Path            = $ouDistinguishedName
             AccountPassword = (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force)
             Enabled         = $true
@@ -65,13 +67,6 @@ try {
     }
     Write-Host "All finance personnel have been imported." -ForegroundColor Green
 
-    # Export created user info to a text file
-    $outputFile = Join-Path $PSScriptRoot "AdResults.txt"
-    Write-Host "-- Exporting AD report to: $outputFile"
-    Get-ADUser -Filter * -SearchBase $ouDistinguishedName -Properties DisplayName,PostalCode,OfficePhone,MobilePhone |
-        Select DisplayName,PostalCode,OfficePhone,MobilePhone |
-        Out-File -FilePath $outputFile -Encoding UTF8
-    Write-Host "AD export complete." -ForegroundColor Green
 }
 catch {
     Write-Error "[AD Script Error] $($_.Exception.Message)"
@@ -79,3 +74,6 @@ catch {
         Write-Host "Hint: Verify Domain Admin rights and AD module availability." -ForegroundColor Red
     }
 }
+
+# Export the Finance OU users for submission
+Get-ADUser -Filter * -SearchBase $ouDistinguishedName -Properties DisplayName,PostalCode,OfficePhone,MobilePhone > (Join-Path $PSScriptRoot 'AdResults.txt')
