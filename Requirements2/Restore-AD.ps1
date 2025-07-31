@@ -22,26 +22,40 @@ try {
     $csv = Join-Path $PSScriptRoot 'financePersonnel.csv'
     $usedSam = @{}
     foreach ($row in Import-Csv $csv) {
-        # handle multiple header variants (spaces or no‑spaces)
-        $firstNameRaw = $row.'First Name'; if (-not $firstNameRaw) { $firstNameRaw = $row.FirstName }
-        $lastNameRaw  = $row.'Last Name';  if (-not $lastNameRaw) { $lastNameRaw  = $row.LastName }
-        $postal       = $row.'Postal Code'; if (-not $postal)     { $postal       = $row.PostalCode }
-        $office       = $row.'Office Phone';if (-not $office)     { $office       = $row.OfficePhone }
-        $mobile       = $row.'Mobile Phone';if (-not $mobile)     { $mobile       = $row.MobilePhone }
+        # normalize header names
+        $fnRaw = $row.'First Name'; if (-not $fnRaw) { $fnRaw = $row.FirstName }; if (-not $fnRaw) { $fnRaw = $row.'First_Name' }
+        $lnRaw = $row.'Last Name';  if (-not $lnRaw) { $lnRaw = $row.LastName };  if (-not $lnRaw) { $lnRaw = $row.'Last_Name' }
 
-        $fn = ($firstNameRaw -replace '[^A-Za-z0-9]').Trim()
-        $ln = ($lastNameRaw  -replace '[^A-Za-z0-9]').Trim()
-        if (-not ($fn -and $ln)) { Write-Host "Row missing names, skipping"; continue }
+        $postal = $row.'Postal Code'; if (-not $postal) { $postal = $row.PostalCode }
+        $office = $row.'Office Phone'; if (-not $office) { $office = $row.OfficePhone }
+        $mobile = $row.'Mobile Phone'; if (-not $mobile) { $mobile = $row.MobilePhone }
+
+        $fn = ($fnRaw -replace '[^A-Za-z0-9]').Trim()
+        $ln = ($lnRaw -replace '[^A-Za-z0-9]').Trim()
+        if (-not ($fn -and $ln)) { Write-Host "Bad row, skipping"; continue }
 
         $sam = (($fn.Substring(0,1) + $ln).ToLower()).Substring(0,[Math]::Min(19,$fn.Length+$ln.Length))
-        $i=1
-        while($usedSam[$sam] -or (Get-ADUser -Filter "SamAccountName -eq '$sam'" -EA 0)){
+        $i = 1
+        while ($usedSam[$sam] -or (Get-ADUser -Filter "SamAccountName -eq '$sam'" -EA 0)) {
             $sam = "{0}{1}" -f $sam.Substring(0,18),$i; $i++
         }
-        $usedSam[$sam]=$true
+        $usedSam[$sam] = $true
 
-        $params = @{SamAccountName=$sam;GivenName=$fn;Surname=$ln;DisplayName="$fn $ln";PostalCode=$postal;OfficePhone=$office;MobilePhone=$mobile;Path=$ouDn;AccountPassword=(ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force);Enabled=$true}
+        $params = @{
+            SamAccountName    = $sam
+            GivenName         = $fn
+            Surname           = $ln
+            DisplayName       = "$fn $ln"
+            PostalCode        = $postal
+            OfficePhone       = $office
+            MobilePhone       = $mobile
+            Path              = $ouDn
+            AccountPassword   = (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force)
+            Enabled           = $true
+        }
+
         New-ADUser @params -EA Stop
+    }
     }
     }
 
