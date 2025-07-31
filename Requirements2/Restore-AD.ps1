@@ -2,73 +2,80 @@
     Umer Mahmood
     Student ID: 001224010
     AUN1 Task 2: Restored AD and SQL Automation Scripts
-    NOTE: Run PowerShell as a user with Domain Admin rights and elevated privileges.
-    If you see a security warning, use `Unblock-File -Path Restore-AD.ps1`.
+    NOTE: Run each section in an elevated session under a Domain Admin or SQL sysadmin account.
+         Use `Unblock-File -Path Restore-AD.ps1` if you see execution warnings.
 ##>
 
-# Ensure Active Directory module is available and run under a Domain Admin account
-# NOTE: This script must be executed in a PowerShell session where your user is a member of the *Domain Admins* group.
-# If you see a security warning, run:
-#   Unblock-File -Path Restore-AD.ps1
-# Then launch PowerShell as your domain user (Domain Admin) with elevated rights.
+# ==================================================
+# SECTION 1: Restore-AD.ps1  (Recreate Finance OU & import users)
+# ==================================================
+
+# Make sure the AD module is available before proceeding
 Import-Module ActiveDirectory -ErrorAction Stop
 
-# --------------------------------------------------
 try {
-    $dbName = "ClientDB"
-    $serverInstance = ".\SQLEXPRESS"
+    # Sanity check to avoid permission errors—needs Domain Admin rights
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-Warning "Insufficient rights: Run this script as a Domain Admin."
+        throw "Privilege check failed."
+    }
 
-    Write-Host "Checking for database '$dbName'..."
-    $checkDb = Invoke-Sqlcmd -ServerInstance $serverInstance -Database master `
-        -Query "SELECT name FROM sys.databases WHERE name = '$dbName'" -ErrorAction Stop
-    if ($checkDb) {
-        Write-Host "Database '$dbName' exists. Dropping it..." -ForegroundColor Yellow
-        Invoke-Sqlcmd -ServerInstance $serverInstance -Query "DROP DATABASE [$dbName]" -ErrorAction Stop
-        Write-Host "Database dropped." -ForegroundColor Green
+    $ouDistinguishedName = "ou=Finance,dc=consultingfirm,dc=com"
+
+    # Clean up existing OU if it exists
+    Write-Host "-- Checking for existing Finance OU..."
+    $existingOu = Get-ADOrganizationalUnit -Filter 'Name -eq "Finance"' -ErrorAction SilentlyContinue
+    if ($existingOu) {
+        Write-Host "Finance OU exists. Deleting..." -ForegroundColor Yellow
+        Remove-ADOrganizationalUnit -Identity $existingOu -Recursive -Confirm:$false -ErrorAction Stop
+        Write-Host "Finance OU deleted." -ForegroundColor Green
     } else {
-        Write-Host "Database '$dbName' does not exist. Continuing..."
+        Write-Host "Finance OU not found. Proceeding to creation."
     }
 
-    Write-Host "Creating database '$dbName'..."
-    Invoke-Sqlcmd -ServerInstance $serverInstance -Query "CREATE DATABASE [$dbName]" -ErrorAction Stop
-    Write-Host "Database created." -ForegroundColor Green
+    # Create the OU from scratch
+    Write-Host "-- Creating Finance OU..."
+    New-ADOrganizationalUnit -Name "Finance" -Path "dc=consultingfirm,dc=com" -ErrorAction Stop
+    Write-Host "Finance OU created." -ForegroundColor Green
 
-    $createTableQuery = @"
-USE [$dbName];
-CREATE TABLE dbo.Client_A_Contacts (
-    FirstName NVARCHAR(50),
-    LastName NVARCHAR(50),
-    DisplayName NVARCHAR(101),
-    PostalCode NVARCHAR(20),
-    OfficePhone NVARCHAR(20),
-    MobilePhone NVARCHAR(20)
-);
-"@
-    Write-Host "Creating table Client_A_Contacts..."
-    Invoke-Sqlcmd -ServerInstance $serverInstance -Query $createTableQuery -ErrorAction Stop
-    Write-Host "Table created." -ForegroundColor Green
+    # Import the CSV with user data
+    $csvFile = Join-Path $PSScriptRoot "financePersonnel.csv"
+    Write-Host "-- Importing users from: $csvFile"
+    $users = Import-Csv -Path $csvFile -ErrorAction Stop
 
-    $csvPath = Join-Path $PSScriptRoot "NewClientData.csv"
-    Write-Host "Importing CSV from $csvPath..."
-    $clients = Import-Csv -Path $csvPath -ErrorAction Stop
-    foreach ($c in $clients) {
-        $insertQuery = @"
-USE [$dbName];
-INSERT INTO dbo.Client_A_Contacts (FirstName, LastName, DisplayName, PostalCode, OfficePhone, MobilePhone)
-VALUES (N'$($c.FirstName)', N'$($c.LastName)', N'$($c.DisplayName)', N'$($c.PostalCode)', N'$($c.OfficePhone)', N'$($c.MobilePhone)');
-"@
-        Invoke-Sqlcmd -ServerInstance $serverInstance -Query $insertQuery -ErrorAction Stop
-        Write-Host "Inserted client: $($c.DisplayName)"
+    # Loop through each entry and create a user
+    foreach ($u in $users) {
+        $fullName = "$($u.'First Name') $($u.'Last Name')"
+        $userParams = @{ 
+            GivenName       = $u.'First Name'
+            Surname         = $u.'Last Name'
+            Name            = $fullName
+            DisplayName     = $fullName
+            PostalCode      = $u.'Postal Code'
+            OfficePhone     = $u.'Office Phone'
+            MobilePhone     = $u.'Mobile Phone'
+            Path            = $ouDistinguishedName
+            AccountPassword = (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force)
+            Enabled         = $true
+        }
+        New-ADUser @userParams -ErrorAction Stop
+        Write-Host "Created AD user: $fullName"
     }
-    Write-Host "All client data inserted." -ForegroundColor Green
+    Write-Host "All finance personnel have been imported." -ForegroundColor Green
 
-    $exportPath = Join-Path $PSScriptRoot "SqlResults.txt"
-    Write-Host "Exporting SQL results to $exportPath..."
-    Invoke-Sqlcmd -ServerInstance $serverInstance -Database $dbName `
-        -Query "SELECT * FROM dbo.Client_A_Contacts" -ErrorAction Stop `
-        | Out-File -FilePath $exportPath -Encoding UTF8
-    Write-Host "Export completed." -ForegroundColor Green
+    # Export created user info to a text file
+    $outputFile = Join-Path $PSScriptRoot "AdResults.txt"
+    Write-Host "-- Exporting AD report to: $outputFile"
+    Get-ADUser -Filter * -SearchBase $ouDistinguishedName -Properties DisplayName,PostalCode,OfficePhone,MobilePhone |
+        Select DisplayName,PostalCode,OfficePhone,MobilePhone |
+        Out-File -FilePath $outputFile -Encoding UTF8
+    Write-Host "AD export complete." -ForegroundColor Green
 }
 catch {
-    Write-Error "Error in SQL script: $($_.Exception.Message)"
+    Write-Error "[AD Script Error] $($_.Exception.Message)"
+    if ($_.Exception.Message -match 'Access is denied') {
+        Write-Host "Hint: Verify Domain Admin rights and AD module availability." -ForegroundColor Red
+    }
 }
