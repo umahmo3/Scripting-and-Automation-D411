@@ -1,17 +1,21 @@
-# Umer Mahmood
-# Student ID: 001224010
-# Restore SQL DB and import data
+<##
+    Umer Mahmood
+    Student ID: 001224010
+    Script: Restore-SQL.ps1
+##>
 
 # Ensure SqlServer module is available and current user can create databases
 # NOTE: Run PowerShell as a user with SQL Server sysadmin or dbcreator rights.
+
 Import-Module SqlServer -ErrorAction Stop
 
-try {
+try { {
     $dbName = "ClientDB"
     $instance = ".\SQLEXPRESS"
 
     Write-Host "-- Checking for existing database: $dbName"
-    $exists = Invoke-Sqlcmd -ServerInstance $instance -Database master \
+    $exists = Invoke-Sqlcmd -ServerInstance $instance -Database master `
+        -Query "SELECT name FROM sys.databases WHERE name='$dbName'" -ErrorAction Stop
         -Query "SELECT name FROM sys.databases WHERE name='$dbName'" -ErrorAction Stop
     if ($exists) {
         Write-Host "Database exists. Dropping $dbName..." -ForegroundColor Yellow
