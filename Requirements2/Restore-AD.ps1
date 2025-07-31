@@ -23,23 +23,27 @@ try {
         throw "Privilege check failed."
     }
 
-    $ouDistinguishedName = "ou=Finance,dc=consultingfirm,dc=com"
+    $ouName = "Finance"
+    $domainDn = (Get-ADDomain).DistinguishedName
 
-    # Clean up existing OU if it exists
     Write-Host "-- Checking for existing Finance OU..."
-    $existingOu = Get-ADOrganizationalUnit -Filter 'Name -eq "Finance"' -ErrorAction SilentlyContinue
+    $existingOu = Get-ADOrganizationalUnit -Filter "Name -eq '$ouName'" -ErrorAction SilentlyContinue
+
     if ($existingOu) {
         Write-Host "Finance OU exists. Deleting..." -ForegroundColor Yellow
-        Remove-ADOrganizationalUnit -Identity $existingOu -Recursive -Confirm:$false -ErrorAction Stop
+        Remove-ADOrganizationalUnit -Identity $existingOu.DistinguishedName -Recursive -Confirm:$false -ErrorAction Stop
         Write-Host "Finance OU deleted." -ForegroundColor Green
     } else {
         Write-Host "Finance OU not found. Proceeding to creation."
     }
 
-    # Create the OU from scratch
     Write-Host "-- Creating Finance OU..."
-    New-ADOrganizationalUnit -Name "Finance" -Path "dc=consultingfirm,dc=com" -ErrorAction Stop
+    New-ADOrganizationalUnit -Name $ouName -Path $domainDn -ErrorAction Stop
     Write-Host "Finance OU created." -ForegroundColor Green
+
+    # Re-fetch the OU object to get its DN (after creation)
+    $ouLookup = Get-ADOrganizationalUnit -Filter "Name -eq '$ouName'" -ErrorAction Stop
+    $ouDistinguishedName = $ouLookup.DistinguishedName
 
     # Import the CSV with user data
     $csvFile = Join-Path $PSScriptRoot "financePersonnel.csv"
@@ -65,8 +69,16 @@ try {
         New-ADUser @userParams -ErrorAction Stop
         Write-Host "Created AD user: $fullName"
     }
+
     Write-Host "All finance personnel have been imported." -ForegroundColor Green
 
+    # Export the Finance OU users for submission
+    $outputFile = Join-Path $PSScriptRoot "AdResults.txt"
+    Write-Host "-- Exporting AD report to: $outputFile"
+    Get-ADUser -Filter * -SearchBase $ouDistinguishedName -Properties DisplayName,PostalCode,OfficePhone,MobilePhone |
+        Select DisplayName,PostalCode,OfficePhone,MobilePhone |
+        Out-File -FilePath $outputFile -Encoding UTF8
+    Write-Host "AD export complete." -ForegroundColor Green
 }
 catch {
     Write-Error "[AD Script Error] $($_.Exception.Message)"
@@ -74,6 +86,3 @@ catch {
         Write-Host "Hint: Verify Domain Admin rights and AD module availability." -ForegroundColor Red
     }
 }
-
-# Export the Finance OU users for submission
-Get-ADUser -Filter * -SearchBase $ouDistinguishedName -Properties DisplayName,PostalCode,OfficePhone,MobilePhone > (Join-Path $PSScriptRoot 'AdResults.txt')
