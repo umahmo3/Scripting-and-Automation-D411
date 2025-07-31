@@ -1,6 +1,6 @@
 <##
 Umer Mahmood  |  Student ID 001224010
-Restore‑AD.ps1  – quick & dirty (but rubric‑compliant)
+Restore‑AD.ps1 – quick & dirty (rubric‑ready)
 ##>
 
 Import-Module ActiveDirectory -EA Stop
@@ -22,36 +22,32 @@ try {
     $csv = Join-Path $PSScriptRoot 'financePersonnel.csv'
     $usedSam = @{}
     foreach ($row in Import-Csv $csv) {
-        $fn = ($row.'First Name' -replace '[^A-Za-z0-9]').Trim()
-        $ln = ($row.'Last Name'  -replace '[^A-Za-z0-9]').Trim()
-        if (-not ($fn -and $ln)) { Write-Host "Bad row, skipping"; continue }
+        # handle multiple header variants (spaces or no‑spaces)
+        $firstNameRaw = $row.'First Name'; if (-not $firstNameRaw) { $firstNameRaw = $row.FirstName }
+        $lastNameRaw  = $row.'Last Name';  if (-not $lastNameRaw) { $lastNameRaw  = $row.LastName }
+        $postal       = $row.'Postal Code'; if (-not $postal)     { $postal       = $row.PostalCode }
+        $office       = $row.'Office Phone';if (-not $office)     { $office       = $row.OfficePhone }
+        $mobile       = $row.'Mobile Phone';if (-not $mobile)     { $mobile       = $row.MobilePhone }
 
-        $sam  = (($fn.Substring(0,1) + $ln).ToLower()).Substring(0,[Math]::Min(19,$fn.Length+$ln.Length))
+        $fn = ($firstNameRaw -replace '[^A-Za-z0-9]').Trim()
+        $ln = ($lastNameRaw  -replace '[^A-Za-z0-9]').Trim()
+        if (-not ($fn -and $ln)) { Write-Host "Row missing names, skipping"; continue }
+
+        $sam = (($fn.Substring(0,1) + $ln).ToLower()).Substring(0,[Math]::Min(19,$fn.Length+$ln.Length))
         $i=1
         while($usedSam[$sam] -or (Get-ADUser -Filter "SamAccountName -eq '$sam'" -EA 0)){
             $sam = "{0}{1}" -f $sam.Substring(0,18),$i; $i++
         }
         $usedSam[$sam]=$true
 
-        $params = @{
-            SamAccountName = $sam
-            GivenName      = $fn
-            Surname        = $ln
-            DisplayName    = "$fn $ln"
-            PostalCode     = $row.'Postal Code'
-            OfficePhone    = $row.'Office Phone'
-            MobilePhone    = $row.'Mobile Phone'
-            Path           = $ouDn
-            AccountPassword= (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force)
-            Enabled        = $true
-        }
+        $params = @{SamAccountName=$sam;GivenName=$fn;Surname=$ln;DisplayName="$fn $ln";PostalCode=$postal;OfficePhone=$office;MobilePhone=$mobile;Path=$ouDn;AccountPassword=(ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force);Enabled=$true}
         New-ADUser @params -EA Stop
-        Write-Host "User $sam created"
+    }
     }
 
     Get-ADUser -Filter * -SearchBase $ouDn -Properties DisplayName,PostalCode,OfficePhone,MobilePhone |
         Select DisplayName,PostalCode,OfficePhone,MobilePhone |
         Out-File (Join-Path $PSScriptRoot 'AdResults.txt') -Encoding utf8
-    Write-Host "Exported AdResults.txt"
+    Write-Host "AdResults.txt generated"
 }
 catch { Write-Error $_ }
