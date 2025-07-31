@@ -53,12 +53,12 @@ try {
             $sam      = $base.Substring(0,[Math]::Max(0,$trimLen)) + $suffix
         }
 
-        New-ADUser -SamAccountName $sam \
-                   -GivenName $fn -Surname $ln -DisplayName "$fn $ln" \
-                   -PostalCode ($r.'Postal Code' ?? $r.PostalCode) \
-                   -OfficePhone ($r.'Office Phone' ?? $r.OfficePhone) \
-                   -MobilePhone ($r.'Mobile Phone' ?? $r.MobilePhone) \
-                   -Path $ouDn -AccountPassword (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force) \
+        New-ADUser -SamAccountName $sam `
+                   -GivenName $fn -Surname $ln -DisplayName "$fn $ln" `
+                   -PostalCode ($r.'Postal Code' ?? $r.PostalCode) `
+                   -OfficePhone ($r.'Office Phone' ?? $r.OfficePhone) `
+                   -MobilePhone ($r.'Mobile Phone' ?? $r.MobilePhone) `
+                   -Path $ouDn -AccountPassword (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force) `
                    -Enabled $true -ErrorAction Stop
         Write-Host "Created: $sam"
         $count++
