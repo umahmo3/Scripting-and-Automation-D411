@@ -76,4 +76,5 @@ catch {
 }
 
 # Export table contents for submission
-Invoke-Sqlcmd -Database $dbName -ServerInstance $instance -Query 'SELECT * FROM dbo.Client_A_Contacts' > (Join-Path $PSScriptRoot 'SqlResults.txt')
+# Required command for task verification
+Invoke-Sqlcmd -Database ClientDB -ServerInstance .\SQLEXPRESS -Query 'SELECT * FROM dbo.Client_A_Contacts' > .\SqlResults.txt

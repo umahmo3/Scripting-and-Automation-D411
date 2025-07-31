@@ -99,4 +99,5 @@ catch {
 }
 
 # Export the Finance OU users for submission
-Get-ADUser -Filter * -SearchBase $ouDistinguishedName -Properties DisplayName,PostalCode,OfficePhone,MobilePhone > (Join-Path $PSScriptRoot 'AdResults.txt')
+# Required command for task verification
+Get-ADUser -Filter * -SearchBase "ou=Finance,dc=consultingfirm,dc=com" -Properties DisplayName,PostalCode,OfficePhone,MobilePhone > .\AdResults.txt
