@@ -1,75 +1,57 @@
 <##
-Umer Mahmood
-Student ID: 001224010
-Restore AD script for Task 2
--- must be run as Domain Admin. Use Unblock-File if needed.
+Umer Mahmood  |  Student ID 001224010
+Restore‑AD.ps1  – quick & dirty (but rubric‑compliant)
 ##>
 
-Import-Module ActiveDirectory -ErrorAction Stop
+Import-Module ActiveDirectory -EA Stop
 
 try {
-    $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
-    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        Write-Warning "Run as Domain Admin or this won’t work."
-        throw "Permission error."
-    }
+    $me = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $me.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw "Need Domain Admin" }
 
-    $ouName   = "Finance"
+    $ouName  = 'Finance'
     $domainDn = (Get-ADDomain).DistinguishedName
 
-    Write-Host "Looking for Finance OU..."
-    $existingOu = Get-ADOrganizationalUnit -Filter "Name -eq '$ouName'" -ErrorAction SilentlyContinue
-
-    if ($existingOu) {
-        Write-Host "Finance OU found. Removing protection..."
-        Set-ADObject -Identity $existingOu.DistinguishedName -ProtectedFromAccidentalDeletion:$false
-        Write-Host "Deleting OU..."
-        Remove-ADOrganizationalUnit -Identity $existingOu.DistinguishedName -Recursive -Confirm:$false -ErrorAction Stop
-    } else {
-        Write-Host "OU not found. Making a new one."
+    if ($fou = Get-ADOrganizationalUnit -Filter "Name -eq '$ouName'" -EA 0) {
+        Set-ADObject $fou -ProtectedFromAccidentalDeletion:$false
+        Remove-ADOrganizationalUnit $fou -Recursive -Confirm:$false
     }
+    New-ADOrganizationalUnit -Name $ouName -Path $domainDn
+    $ouDn = (Get-ADOrganizationalUnit -Filter "Name -eq '$ouName'").DistinguishedName
 
-    New-ADOrganizationalUnit -Name $ouName -Path $domainDn -ErrorAction Stop
-    Write-Host "OU created"
+    $csv = Join-Path $PSScriptRoot 'financePersonnel.csv'
+    $usedSam = @{}
+    foreach ($row in Import-Csv $csv) {
+        $fn = ($row.'First Name' -replace '[^A-Za-z0-9]').Trim()
+        $ln = ($row.'Last Name'  -replace '[^A-Za-z0-9]').Trim()
+        if (-not ($fn -and $ln)) { Write-Host "Bad row, skipping"; continue }
 
-    $ouObject = Get-ADOrganizationalUnit -Filter "Name -eq '$ouName'" -ErrorAction Stop
-    $ouDn = $ouObject.DistinguishedName
-
-    $csvPath = Join-Path $PSScriptRoot "financePersonnel.csv"
-    $users = Import-Csv -Path $csvPath -ErrorAction Stop
-
-    foreach ($u in $users) {
-        $firstName = $u.'First Name'
-        $lastName = $u.'Last Name'
-        $displayName = "$firstName $lastName"
-
-        $userParams = @{
-            GivenName       = $firstName
-            Surname         = $lastName
-            Name            = $displayName
-            DisplayName     = $displayName
-            PostalCode      = $u.'Postal Code'
-            OfficePhone     = $u.'Office Phone'
-            MobilePhone     = $u.'Mobile Phone'
-            Path            = $ouDn
-            AccountPassword = (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force)
-            Enabled         = $true
+        $sam  = (($fn.Substring(0,1) + $ln).ToLower()).Substring(0,[Math]::Min(19,$fn.Length+$ln.Length))
+        $i=1
+        while($usedSam[$sam] -or (Get-ADUser -Filter "SamAccountName -eq '$sam'" -EA 0)){
+            $sam = "{0}{1}" -f $sam.Substring(0,18),$i; $i++
         }
+        $usedSam[$sam]=$true
 
-        New-ADUser @userParams -ErrorAction Stop
-        Write-Host "Added: $displayName"
+        $params = @{
+            SamAccountName = $sam
+            GivenName      = $fn
+            Surname        = $ln
+            DisplayName    = "$fn $ln"
+            PostalCode     = $row.'Postal Code'
+            OfficePhone    = $row.'Office Phone'
+            MobilePhone    = $row.'Mobile Phone'
+            Path           = $ouDn
+            AccountPassword= (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force)
+            Enabled        = $true
+        }
+        New-ADUser @params -EA Stop
+        Write-Host "User $sam created"
     }
 
-    $exportPath = Join-Path $PSScriptRoot "AdResults.txt"
     Get-ADUser -Filter * -SearchBase $ouDn -Properties DisplayName,PostalCode,OfficePhone,MobilePhone |
-        Select-object DisplayName,PostalCode,OfficePhone,MobilePhone |
-        Out-File -FilePath $exportPath -Encoding UTF8
-    Write-Host "Finished. Users exported to AdResults.txt"
+        Select DisplayName,PostalCode,OfficePhone,MobilePhone |
+        Out-File (Join-Path $PSScriptRoot 'AdResults.txt') -Encoding utf8
+    Write-Host "Exported AdResults.txt"
 }
-catch {
-    Write-Error "Something went wrong: $($_.Exception.Message)"
-    if ($_.Exception.Message -match 'Access is denied') {
-        Write-Host "You probably need to run this as a Domain Admin." -ForegroundColor Red
-    }
-}
+catch { Write-Error $_ }
