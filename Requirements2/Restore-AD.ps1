@@ -1,49 +1,75 @@
-# Umer Mahmood
-# Student ID: 001224010
-# Restore Active Directory OU and import users
+<##
+Umer Mahmood
+Student ID: 001224010
+Restore AD script for Task 2
+-- must be run as Domain Admin. Use Unblock-File if needed.
+##>
 
-Import-Module ActiveDirectory
+Import-Module ActiveDirectory -ErrorAction Stop
 
 try {
-    # Check if OU exists
-    $ou = Get-ADOrganizationalUnit -LDAPFilter "(ou=Finance)" -ErrorAction SilentlyContinue
-    if ($ou) {
-        Write-Host "Finance OU exists. Deleting OU..."
-        Remove-ADOrganizationalUnit -Identity "OU=Finance,DC=consultingfirm,DC=com" -Recursive -Confirm:$false
-        Write-Host "Finance OU deleted."
+    $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-Warning "Run as Domain Admin or this won’t work."
+        throw "Permission error."
+    }
+
+    $ouName   = "Finance"
+    $domainDn = (Get-ADDomain).DistinguishedName
+
+    Write-Host "Looking for Finance OU..."
+    $existingOu = Get-ADOrganizationalUnit -Filter "Name -eq '$ouName'" -ErrorAction SilentlyContinue
+
+    if ($existingOu) {
+        Write-Host "Finance OU found. Removing protection..."
+        Set-ADObject -Identity $existingOu.DistinguishedName -ProtectedFromAccidentalDeletion:$false
+        Write-Host "Deleting OU..."
+        Remove-ADOrganizationalUnit -Identity $existingOu.DistinguishedName -Recursive -Confirm:$false -ErrorAction Stop
     } else {
-        Write-Host "Finance OU does not exist."
+        Write-Host "OU not found. Making a new one."
     }
 
-    # Create Finance OU
-    New-ADOrganizationalUnit -Name "Finance" -Path "DC=consultingfirm,DC=com"
-    Write-Host "Finance OU created."
+    New-ADOrganizationalUnit -Name $ouName -Path $domainDn -ErrorAction Stop
+    Write-Host "OU created"
 
-    # Import users from CSV
-    $users = Import-Csv ".\financePersonnel.csv"
-    foreach ($user in $users) {
-        $displayName = "$($user.'First Name') $($user.'Last Name')"
-        New-ADUser `
-            -Name $displayName `
-            -GivenName $user.'First Name' `
-            -Surname $user.'Last Name' `
-            -DisplayName $displayName `
-            -PostalCode $user.'Postal Code' `
-            -OfficePhone $user.'Office Phone' `
-            -MobilePhone $user.'Mobile Phone' `
-            -Path "OU=Finance,DC=consultingfirm,DC=com" `
-            -AccountPassword (ConvertTo-SecureString "P@ssw0rd123" -AsPlainText -Force) `
-            -Enabled $true
+    $ouObject = Get-ADOrganizationalUnit -Filter "Name -eq '$ouName'" -ErrorAction Stop
+    $ouDn = $ouObject.DistinguishedName
+
+    $csvPath = Join-Path $PSScriptRoot "financePersonnel.csv"
+    $users = Import-Csv -Path $csvPath -ErrorAction Stop
+
+    foreach ($u in $users) {
+        $firstName = $u.'First Name'
+        $lastName = $u.'Last Name'
+        $displayName = "$firstName $lastName"
+
+        $userParams = @{
+            GivenName       = $firstName
+            Surname         = $lastName
+            Name            = $displayName
+            DisplayName     = $displayName
+            PostalCode      = $u.'Postal Code'
+            OfficePhone     = $u.'Office Phone'
+            MobilePhone     = $u.'Mobile Phone'
+            Path            = $ouDn
+            AccountPassword = (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force)
+            Enabled         = $true
+        }
+
+        New-ADUser @userParams -ErrorAction Stop
+        Write-Host "Added: $displayName"
     }
 
-    # Export users to AdResults.txt
-    Get-ADUser -Filter * -SearchBase "OU=Finance,DC=consultingfirm,DC=com" `
-        -Properties DisplayName,PostalCode,OfficePhone,MobilePhone | `
-        Select-Object DisplayName,PostalCode,OfficePhone,MobilePhone | `
-        Out-File -FilePath ".\AdResults.txt"
-
-    Write-Host "AD user import and export complete."
+    $exportPath = Join-Path $PSScriptRoot "AdResults.txt"
+    Get-ADUser -Filter * -SearchBase $ouDn -Properties DisplayName,PostalCode,OfficePhone,MobilePhone |
+        Select-object DisplayName,PostalCode,OfficePhone,MobilePhone |
+        Out-File -FilePath $exportPath -Encoding UTF8
+    Write-Host "Finished. Users exported to AdResults.txt"
 }
 catch {
-    Write-Error "Error: $_"
+    Write-Error "Something went wrong: $($_.Exception.Message)"
+    if ($_.Exception.Message -match 'Access is denied') {
+        Write-Host "You probably need to run this as a Domain Admin." -ForegroundColor Red
+    }
 }

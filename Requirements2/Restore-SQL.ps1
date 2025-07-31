@@ -1,50 +1,60 @@
-# Umer Mahmood
-# Student ID: 001224010
-# Restore SQL DB and import data
+<##
+    Umer Mahmood
+    Student ID: 001224010
+    Script: Restore-SQL.ps1
+##>
 
-Import-Module SqlServer
-
-$server = ".\SQLEXPRESS"
-$db = "ClientDB"
-$table = "Client_A_Contacts"
+# Ensure the SqlServer module is loaded and you have dbo rights
+Import-Module SqlServer -ErrorAction Stop
 
 try {
-    # Check and drop existing DB
-    $exists = Invoke-Sqlcmd -ServerInstance $server -Query "SELECT name FROM sys.databases WHERE name = '$db'"
+    $dbName   = "ClientDB"
+    $instance = ".\SQLEXPRESS"
+
+    Write-Host "-- Checking for existing database: $dbName"
+    $exists = Invoke-Sqlcmd -ServerInstance $instance -Database master `
+        -Query "SELECT name FROM sys.databases WHERE name='$dbName'" `
+        -ErrorAction Stop
+
     if ($exists) {
-        Write-Host "Database $db exists. Dropping..."
-        Invoke-Sqlcmd -ServerInstance $server -Query "DROP DATABASE [$db]"
-        Write-Host "Database $db dropped."
+        Write-Host "Database exists. Dropping $dbName..." -ForegroundColor Yellow
+        Invoke-Sqlcmd -ServerInstance $instance -Query "DROP DATABASE [$dbName]" -ErrorAction Stop
+        Write-Host "Database dropped." -ForegroundColor Green
     } else {
-        Write-Host "Database $db does not exist."
+        Write-Host "Database not found. Creating new $dbName."
     }
 
-    # Create DB
-    Invoke-Sqlcmd -ServerInstance $server -Query "CREATE DATABASE [$db]"
-    Write-Host "Database $db created."
+    Write-Host "-- Creating database: $dbName"
+    Invoke-Sqlcmd -ServerInstance $instance -Query "CREATE DATABASE [$dbName]" -ErrorAction Stop
+    Write-Host "Database created." -ForegroundColor Green
 
-    # Create table
-    Invoke-Sqlcmd -ServerInstance $server -Database $db -Query @"
-    CREATE TABLE $table (
-        [First Name] NVARCHAR(50),
-        [Last Name] NVARCHAR(50),
-        [Email] NVARCHAR(100),
-        [Phone] NVARCHAR(25)
-    )
+    $tableDDL = @"
+USE [$dbName];
+CREATE TABLE dbo.Client_A_Contacts (
+    FirstName NVARCHAR(50),
+    LastName NVARCHAR(50),
+    DisplayName NVARCHAR(101),
+    PostalCode NVARCHAR(20),
+    OfficePhone NVARCHAR(20),
+    MobilePhone NVARCHAR(20)
+);
 "@
-    Write-Host "Table $table created."
+    Write-Host "-- Creating table Client_A_Contacts"
+    Invoke-Sqlcmd -ServerInstance $instance -Query $tableDDL -ErrorAction Stop
+    Write-Host "Table created." -ForegroundColor Green
 
-    # Import from CSV and insert into table
-    $data = Import-Csv ".\NewClientData.csv"
-    foreach ($row in $data) {
-        $q = "INSERT INTO $table ([First Name],[Last Name],[Email],[Phone]) VALUES (N'$($row.'First Name')',N'$($row.'Last Name')',N'$($row.Email)',N'$($row.Phone)')"
-        Invoke-Sqlcmd -ServerInstance $server -Database $db -Query $q
-    }
+    # Import CSV data
+    $csvPath = Join-Path $PSScriptRoot "NewClientData.csv"
+    Write-Host "-- Importing data from: $csvPath"
+    $rows = Import-Csv -Path $csvPath -ErrorAction Stop
 
-    # Export to file
-    Invoke-Sqlcmd -ServerInstance $server -Database $db -Query "SELECT * FROM $table" | Out-File -FilePath ".\SqlResults.txt"
-    Write-Host "SQL export to SqlResults.txt done."
-}
-catch {
-    Write-Error "Error: $_"
-}
+    foreach ($r in $rows) {
+        $insertSQL = @"
+USE [$dbName];
+INSERT INTO dbo.Client_A_Contacts
+    (FirstName, LastName, DisplayName, PostalCode, OfficePhone, MobilePhone)
+VALUES
+    (N'$($r.FirstName)', N'$($r.LastName)', N'$($r.DisplayName)',
+     N'$($r.PostalCode)', N'$($r.OfficePhone)', N'$($r.MobilePhone)');
+"@
+        Invoke-Sqlcmd -ServerInstance $instance -Query $i
