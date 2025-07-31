@@ -14,6 +14,15 @@
 # Make sure the AD module is available before proceeding
 Import-Module ActiveDirectory -ErrorAction Stop
 
+function Get-Field {
+    param($row, [string[]]$names)
+    foreach ($n in $names) {
+        $val = $row.$n
+        if ($val) { return $val }
+    }
+    return $null
+}
+
 try {
     # Sanity check to avoid permission errors—needs Domain Admin rights
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -50,11 +59,11 @@ try {
     $created = 0
     foreach ($u in $users) {
         # Support multiple header styles in the CSV
-        $first  = $u.'First Name'  ?? $u.FirstName  ?? $u.First_Name
-        $last   = $u.'Last Name'   ?? $u.LastName   ?? $u.Last_Name
-        $postal = $u.'Postal Code' ?? $u.PostalCode ?? $u.Postal_Code
-        $office = $u.'Office Phone' ?? $u.OfficePhone ?? $u.Office_Phone
-        $mobile = $u.'Mobile Phone' ?? $u.MobilePhone ?? $u.Mobile_Phone
+        $first  = Get-Field $u @("First Name","FirstName","First_Name")
+        $last   = Get-Field $u @("Last Name","LastName","Last_Name")
+        $postal = Get-Field $u @("Postal Code","PostalCode","Postal_Code")
+        $office = Get-Field $u @("Office Phone","OfficePhone","Office_Phone")
+        $mobile = Get-Field $u @("Mobile Phone","MobilePhone","Mobile_Phone")
         $sam    = $u.samAccount
 
         # Build a SamAccountName if one is not supplied

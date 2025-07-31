@@ -6,6 +6,15 @@
 
 # Must be run by a user with dbcreator or sysadmin rights
 Import-Module SqlServer -ErrorAction Stop
+function Get-Field {
+    param($row, [string[]]$names)
+    foreach ($n in $names) {
+        $val = $row.$n
+        if ($val) { return $val }
+    }
+    return $null
+}
+
 
 try {
     $dbName = "ClientDB"
@@ -51,11 +60,11 @@ CREATE TABLE dbo.Client_A_Contacts (
     $inserted = 0
     foreach ($r in $rows) {
         # Handle different header variations
-        $first  = $r.FirstName  ?? $r.first_name  ?? $r.'First Name'
-        $last   = $r.LastName   ?? $r.last_name   ?? $r.'Last Name'
-        $postal = $r.PostalCode ?? $r.zip         ?? $r.'Postal Code'
-        $office = $r.OfficePhone ?? $r.officePhone ?? $r.'Office Phone'
-        $mobile = $r.MobilePhone ?? $r.mobilePhone ?? $r.'Mobile Phone'
+        $first  = Get-Field $r @("FirstName","first_name","First Name")
+        $last   = Get-Field $r @("LastName","last_name","Last Name")
+        $postal = Get-Field $r @("PostalCode","zip","Postal Code")
+        $office = Get-Field $r @("OfficePhone","officePhone","Office Phone")
+        $mobile = Get-Field $r @("MobilePhone","mobilePhone","Mobile Phone")
         $display = $r.DisplayName
         if (-not $display) { $display = "$first $last" }
 
