@@ -1,68 +1,78 @@
 <#
-  Restore-AD.ps1  –  Umer Mahmood | 001224010
+    Restore-AD.ps1
+    Student: Umer Mahmood
+    Student ID: 001224010          # ← Replace with your actual WGU ID if different
+    Task 2 – Restore Active Directory
 
-  Notes to self
-  -------------
-  • run as Domain Admin, elevated PowerShell
-  • nukes + rebuilds “Finance” OU
-  • pulls users from financePersonnel.csv (same folder)
-  • clears accidental-deletion flag first
-  • spits out AdResults.txt for grader
+    This script rebuilds the Finance OU and bulk-creates users from financePersonnel.csv.
+    Requirements met:
+      1) Remove existing Finance OU (if present) with confirmation messages.
+      2) Create new Finance OU.
+      3) Import users with GivenName, Surname, DisplayName, PostalCode,
+         OfficePhone, MobilePhone (samAccountName is taken from CSV).
+      4) Output AdResults.txt exactly as specified by the rubric.
 #>
 
-# load AD tools
-Import-Module ActiveDirectory -ErrorAction Stop
-$ErrorActionPreference = 'Stop'
+# --- PREPARATION --------------------------------------------------------------
+Import-Module ActiveDirectory
 
-# constants
-$ouName   = 'Finance'
-$domainDN = 'dc=consultingfirm,dc=com'
-$ouDN     = "ou=$ouName,$domainDN"
-$here     = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$csvPath  = Join-Path $here 'financePersonnel.csv'
-$outFile  = Join-Path $here 'AdResults.txt'
-$pwd      = ConvertTo-SecureString 'WguPa55!@#' -AsPlainText -Force  # demo pass
+$domainDN        = 'dc=consultingfirm,dc=com'   # Fixed DN per rubric wording
+$financeOUName   = 'Finance'
+$financeOUDN     = "ou=$financeOUName,$domainDN"
+$scriptDir       = Split-Path -Parent $PSCommandPath
+$csvPath         = Join-Path $scriptDir 'financePersonnel.csv'
 
-# ---- wipe old OU if it exists ----
-if ($old = Get-ADOrganizationalUnit -LDAP "(ou=$ouName)" -SearchBase $domainDN -EA 0) {
-    Write-Host "Old $ouName OU found – deleting…" -f Yellow
-    Set-ADObject $old.DistinguishedName -ProtectedFromAccidentalDeletion:$false
-    Remove-ADOrganizationalUnit $old.DistinguishedName -Recursive -Confirm:$false
+try {
+    # --- 1. Remove existing Finance OU if it exists --------------------------
+    $existingOU = Get-ADOrganizationalUnit -LDAPFilter "(ou=$financeOUName)" `
+                                           -SearchBase $domainDN `
+                                           -ErrorAction SilentlyContinue
+    if ($existingOU) {
+        Write-Host "An existing '$financeOUName' OU was found and will be deleted..." -ForegroundColor Yellow
+
+        # Disable accidental-deletion protection then delete
+        Set-ADObject -Identity $existingOU.DistinguishedName -ProtectedFromAccidentalDeletion:$false
+        Remove-ADOrganizationalUnit -Identity $existingOU.DistinguishedName -Recursive -Confirm:$false
+        Write-Host "The old '$financeOUName' OU has been removed." -ForegroundColor Yellow
+    } else {
+        Write-Host "No existing '$financeOUName' OU was detected." -ForegroundColor Cyan
+    }
+
+    # --- 2. Create new Finance OU -------------------------------------------
+    New-ADOrganizationalUnit -Name $financeOUName -Path $domainDN -ProtectedFromAccidentalDeletion $true
+    Write-Host "New '$financeOUName' OU created successfully." -ForegroundColor Green
+
+    # --- 3. Import users from CSV -------------------------------------------
+    if (-not (Test-Path $csvPath)) { throw "CSV file not found: $csvPath" }
+
+    Import-Csv -Path $csvPath | ForEach-Object {
+        $given   = $_.First_Name.Trim()
+        $surname = $_.Last_Name.Trim()
+        $display = "$given $surname"
+        $sam     = $_.samAccount.Trim()
+
+        # Create the user
+        New-ADUser `
+            -GivenName      $given `
+            -Surname        $surname `
+            -Name           $display `
+            -DisplayName    $display `
+            -SamAccountName $sam `
+            -Path           $financeOUDN `
+            -PostalCode     $_.PostalCode `
+            -OfficePhone    $_.OfficePhone `
+            -MobilePhone    $_.MobilePhone `
+            -AccountPassword (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force) `
+            -Enabled        $true
+    }
+
+    Write-Host "All Finance users imported successfully." -ForegroundColor Green
+}
+catch {
+    Write-Host "An unexpected error occurred:`n$($_.Exception.Message)" -ForegroundColor Red
+    break
 }
 
-# ---- create fresh OU ----
-New-ADOrganizationalUnit -Name $ouName -Path $domainDN -ProtectedFromAccidentalDeletion:$true
-Write-Host "$ouName OU created." -f Green
-
-# ---- sanity check CSV ----
-if (-not (Test-Path $csvPath)) { throw "CSV missing: $csvPath" }
-$rows = Import-Csv $csvPath
-
-# ---- loop + add users ----
-foreach ($u in $rows) {
-    $sam  = $u.samAccount
-    $disp = "$($u.First_Name) $($u.Last_Name)"
-
-    New-ADUser `
-        -Path  $ouDN `
-        -SamAccountName $sam `
-        -UserPrincipalName "$sam@consultingfirm.com" `
-        -GivenName $u.First_Name `
-        -Surname   $u.Last_Name `
-        -Name      $disp `
-        -DisplayName $disp `
-        -PostalCode   $u.PostalCode `
-        -OfficePhone  $u.OfficePhone `
-        -MobilePhone  $u.MobilePhone `
-        -AccountPassword $pwd `
-        -Enabled $true `
-        -ChangePasswordAtLogon $true
-}
-Write-Host "Imported $($rows.Count) users." -f Green
-
-# ---- dump results for grader ----
-Get-ADUser -Filter * -SearchBase $ouDN `
-  -Properties DisplayName,PostalCode,OfficePhone,MobilePhone |
-Select SamAccountName,DisplayName,PostalCode,OfficePhone,MobilePhone |
-Out-File $outFile -Encoding UTF8
-Write-Host "AdResults.txt done -> $outFile" -f Green
+# --- 4. REQUIRED OUTPUT LINE --------------------------------------------------
+# (Must be the exact text shown in the rubric)
+Get-ADUser -Filter * -SearchBase "ou=Finance,dc=consultingfirm,dc=com" -Properties DisplayName,PostalCode,OfficePhone,MobilePhone > .\AdResults.txt
